@@ -1,10 +1,5 @@
-type User {
-  id: ID!
-  name: String!
-}
-
 type ContentMeta {
-  author: User!
+  author: String!
   publishedAt: String!
 }
 
@@ -14,14 +9,13 @@ type Post {
   contentMeta: ContentMeta!
   content: String!
   commentsEnabled: Boolean!
-  comments(first: Int, after: String): CommentConnection!
 }
 
 type PostSnippet {
-  postId: ID!
+  postID: ID!
   title: String!
   contentMeta: ContentMeta!
-  contentSnippet(length: Int): String!
+  contentSnippet: String!
 }
 
 type PostSnippetConnection {
@@ -30,16 +24,16 @@ type PostSnippetConnection {
 }
 
 type PostSnippetEdge {
-  cursor: String!
+  cursor: ID!
   node: PostSnippet!
 }
 
 type Comment {
   id: ID!
-  postId: ID!
-  parentId: ID
+  postID: ID!
   contentMeta: ContentMeta!
   content: String!
+  replies: CommentConnection!
 }
 
 type CommentConnection {
@@ -48,25 +42,26 @@ type CommentConnection {
 }
 
 type CommentEdge {
-  cursor: String!
+  cursor: ID!
   node: Comment!
 }
 
 type PageInfo {
-  endCursor: String!
+  endCursor: ID!
   hasNextPage: Boolean!
 }
 
 type Query {
-  posts(first: Int, after: String): [PostSnippetConnection!]!
-  post(id: ID!, commentsFirst: Int, commentsAfter: String): Post
+  post(id: ID!): Post
+  postSnippets(snippetLength: Int, first: Int, after: ID): PostSnippetConnection!
+  comments(postID: ID!, parentID: ID, first: Int, depth: Int, after: ID): CommentConnection!
 }
 
 type Mutation {
   createPost(title: String!, author: String!, content: String!, commentsEnabled: Boolean!): Post!
-  createComment(postId: ID!, parentId: ID, author: String!, content: String!): Comment!
+  createComment(postID: ID!, parentID: ID, author: String!, content: String!): Comment!
 }
 
 type Subscription {
-  commentAdded(postId: ID!): Comment!
+  commentAdded(postID: ID!): Comment!
 }

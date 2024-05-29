@@ -3,11 +3,11 @@
 package model
 
 type Comment struct {
-	ID          string       `json:"id"`
-	PostID      string       `json:"postId"`
-	ParentID    *string      `json:"parentId,omitempty"`
-	ContentMeta *ContentMeta `json:"contentMeta"`
-	Content     string       `json:"content"`
+	ID          int                `json:"id"`
+	PostID      int                `json:"postID"`
+	ContentMeta *ContentMeta       `json:"contentMeta"`
+	Content     string             `json:"content"`
+	Replies     *CommentConnection `json:"replies"`
 }
 
 type CommentConnection struct {
@@ -16,12 +16,12 @@ type CommentConnection struct {
 }
 
 type CommentEdge struct {
-	Cursor string   `json:"cursor"`
+	Cursor int      `json:"cursor"`
 	Node   *Comment `json:"node"`
 }
 
 type ContentMeta struct {
-	Author      *User  `json:"author"`
+	Author      string `json:"author"`
 	PublishedAt string `json:"publishedAt"`
 }
 
@@ -29,21 +29,20 @@ type Mutation struct {
 }
 
 type PageInfo struct {
-	EndCursor   string `json:"endCursor"`
-	HasNextPage bool   `json:"hasNextPage"`
+	EndCursor   int  `json:"endCursor"`
+	HasNextPage bool `json:"hasNextPage"`
 }
 
 type Post struct {
-	ID              string             `json:"id"`
-	Title           string             `json:"title"`
-	ContentMeta     *ContentMeta       `json:"contentMeta"`
-	Content         string             `json:"content"`
-	CommentsEnabled bool               `json:"commentsEnabled"`
-	Comments        *CommentConnection `json:"comments"`
+	ID              int          `json:"id"`
+	Title           string       `json:"title"`
+	ContentMeta     *ContentMeta `json:"contentMeta"`
+	Content         string       `json:"content"`
+	CommentsEnabled bool         `json:"commentsEnabled"`
 }
 
 type PostSnippet struct {
-	PostID         string       `json:"postId"`
+	PostID         int          `json:"postID"`
 	Title          string       `json:"title"`
 	ContentMeta    *ContentMeta `json:"contentMeta"`
 	ContentSnippet string       `json:"contentSnippet"`
@@ -55,7 +54,7 @@ type PostSnippetConnection struct {
 }
 
 type PostSnippetEdge struct {
-	Cursor string       `json:"cursor"`
+	Cursor int          `json:"cursor"`
 	Node   *PostSnippet `json:"node"`
 }
 
@@ -63,9 +62,4 @@ type Query struct {
 }
 
 type Subscription struct {
-}
-
-type User struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
 }

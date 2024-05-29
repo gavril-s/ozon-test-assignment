@@ -1,0 +1,28 @@
+version: '3.9'
+
+services:
+  app:
+    container_name: ozon-app
+    build:
+      context: ..
+      dockerfile: ./build/Dockerfile
+    environment:
+      DATABASE_URL: "host=postgres user=user password=password dbname=db sslmode=disable"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+  postgres:
+    container_name: ozon-postgres
+    image: postgres
+    environment:
+      POSTGRES_PASSWORD: password
+      POSTGRES_USER: user
+      POSTGRES_DB: db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:  
+  pgdata: {}
