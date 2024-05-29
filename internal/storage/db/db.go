@@ -106,7 +106,7 @@ func (db *DB) GetComments(postId int, parentId *int, depthLimit int, threadLimit
 	comments := make(map[int]*storageModel.Comment)
 
 	dbTopLevelComments := make([]dbModel.Comment, 0, threadLimit)
-	tx := db.con.Order("id").Limit(threadLimit)
+	tx := db.con.Order("id").Limit(threadLimit + 1)
 	if parentId != nil {
 		tx = tx.Where("comment_id = ?", *parentId)
 	}
@@ -122,7 +122,7 @@ func (db *DB) GetComments(postId int, parentId *int, depthLimit int, threadLimit
 		topLevelComments = append(topLevelComments, comment)
 		comments[comment.ID] = comment
 	}
-	for depth := 1; depth <= depthLimit; depth++ {
+	for depth := 0; depth <= depthLimit; depth++ {
 		dbReplies := make([]dbModel.Comment, 0, threadLimit)
 		tx = db.con.Raw(
 			"SELECT c.id, c.post_id, c.parent_id, c.author, c.published_at, c.content "+
@@ -131,9 +131,6 @@ func (db *DB) GetComments(postId int, parentId *int, depthLimit int, threadLimit
 		).Find(&dbReplies)
 		if tx.Error != nil {
 			return nil, errors.DatabaseQueryExecutionFailure{}
-		}
-		if tx.Error != nil {
-			return nil, tx.Error
 		}
 		parentIds = make([]int, 0, len(dbReplies))
 		for _, dbReply := range dbReplies {
@@ -159,7 +156,7 @@ func (db *DB) GetPostsSnippets(snippetLength int, limit int, after *int) ([]*sto
 	if after != nil {
 		tx = tx.Where("id > ?", *after)
 	}
-	tx = tx.Limit(limit).Find(&snippets)
+	tx = tx.Limit(limit + 1).Find(&snippets)
 	if tx.Error != nil {
 		return nil, errors.DatabaseQueryExecutionFailure{}
 	}
