@@ -102,13 +102,15 @@ func (db *DB) GetPost(postId int) (*storageModel.Post, error) {
 }
 
 func (db *DB) GetComments(postId int, parentId *int, depthLimit int, threadLimit int, after *int) ([]*storageModel.Comment, error) {
-	topLevelComments := make([]*storageModel.Comment, 0, threadLimit)
 	comments := make(map[int]*storageModel.Comment)
+	topLevelComments := make([]*storageModel.Comment, 0, threadLimit)
 
 	dbTopLevelComments := make([]dbModel.Comment, 0, threadLimit)
-	tx := db.con.Order("id").Limit(threadLimit + 1)
+	tx := db.con.Limit(threadLimit+1).Where("post_id = ?", postId)
 	if parentId != nil {
-		tx = tx.Where("comment_id = ?", *parentId)
+		tx = tx.Where("parent_id = ?", *parentId)
+	} else {
+		tx = tx.Where("parent_id IS NULL")
 	}
 	tx = tx.Find(&dbTopLevelComments)
 	if tx.Error != nil {
@@ -122,6 +124,7 @@ func (db *DB) GetComments(postId int, parentId *int, depthLimit int, threadLimit
 		topLevelComments = append(topLevelComments, comment)
 		comments[comment.ID] = comment
 	}
+
 	for depth := 0; depth <= depthLimit; depth++ {
 		dbReplies := make([]dbModel.Comment, 0, threadLimit)
 		tx = db.con.Raw(
@@ -132,6 +135,7 @@ func (db *DB) GetComments(postId int, parentId *int, depthLimit int, threadLimit
 		if tx.Error != nil {
 			return nil, errors.DatabaseQueryExecutionFailure{}
 		}
+
 		parentIds = make([]int, 0, len(dbReplies))
 		for _, dbReply := range dbReplies {
 			reply := db.dbCommentToStorageComment(&dbReply)
@@ -144,6 +148,7 @@ func (db *DB) GetComments(postId int, parentId *int, depthLimit int, threadLimit
 			}
 		}
 	}
+
 	return topLevelComments, nil
 }
 
