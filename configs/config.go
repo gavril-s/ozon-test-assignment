@@ -14,8 +14,8 @@ const PostSnippetsLimit = 100
 
 const DefaultServerHost = "0.0.0.0"
 const DefaultServerPort = "8080"
-const DefaultStorageType = storage.StorageTypeDB
-const DefaultDatabaseUrl = "user=user password=password host=localhost port=5432 " +
+const DefaultStorageType = storage.StorageTypeMemory
+const DefaultDatabaseUrl = "user=user password=password host=postgres port=5432 " +
 	"dbname=db sslmode=disable TimeZone=Europe/Moscow"
 
 type Env struct {
@@ -26,7 +26,7 @@ type Env struct {
 }
 
 func ReadEnv() Env {
-	host := os.Getenv("PORT")
+	host := os.Getenv("HOST")
 	if host == "" {
 		host = DefaultServerHost
 	}
