@@ -1,105 +1,108 @@
 package post
 
 import (
-	"fmt"
+	"ozon-test-assignment/configs"
 	graphModel "ozon-test-assignment/graph/model"
 	"ozon-test-assignment/internal/storage"
 	storageModel "ozon-test-assignment/internal/storage/model"
 )
 
-const SnippetsLimit = 100
-const SnippetDefaultLength = 300
-
-func Post(storage storage.Storage, id int) (*graphModel.Post, error) {
-	post, err := storage.GetPost(id)
-	if err != nil {
-		return nil, fmt.Errorf("get post error")
-	}
-
-	graphPost := graphModel.Post{
-		ID:    post.ID,
-		Title: post.Title,
-		ContentMeta: &graphModel.ContentMeta{
-			Author:      post.Author,
-			PublishedAt: post.PublishedAt.String(),
-		},
-		Content:         post.Content,
-		CommentsEnabled: post.CommentsEnabled,
-	}
-	return &graphPost, nil
-}
-
-func PostSnippets(storage storage.Storage, snippetLength *int, first *int, after *int) (*graphModel.PostSnippetConnection, error) {
-	limit := SnippetsLimit
-	if first != nil {
-		limit = *first
-	}
-
-	length := SnippetDefaultLength
-	if snippetLength != nil {
-		length = *snippetLength
-	}
-
-	snippets, err := storage.GetPostsSnippets(length, limit, after)
-	if err != nil {
-		return nil, fmt.Errorf("get snippets error")
-	}
-
-	var snippetEdges []*graphModel.PostSnippetEdge
-	for _, snippet := range snippets {
-		graphSnippet := graphModel.PostSnippet{
-			PostID: snippet.PostID,
-			Title:  snippet.Title,
-			ContentMeta: &graphModel.ContentMeta{
-				Author:      snippet.Author,
-				PublishedAt: snippet.PublishedAt.String(),
-			},
-			ContentSnippet: snippet.ContentSnippet,
-		}
-		snippetEdges = append(snippetEdges, &graphModel.PostSnippetEdge{
-			Cursor: graphSnippet.PostID,
-			Node:   &graphSnippet,
-		})
-	}
-
-	endCursor := 0
+func createPostSnippetConnection(
+	snippets []*storageModel.PostSnippet,
+	limit int,
+) *graphModel.PostSnippetConnection {
+	edges := make([]*graphModel.PostSnippetEdge, 0, limit)
 	hasNextPage := false
-	if len(snippets) > 0 {
-		endCursor = snippets[len(snippets)-1].PostID
-		hasNextPage = len(snippets) == limit
+	endCursor := 0
+
+	for _, snippet := range snippets {
+		if len(edges) >= limit {
+			hasNextPage = true
+			break
+		}
+		edge := graphModel.PostSnippetEdge{
+			Cursor: snippet.PostID,
+			Node: &graphModel.PostSnippet{
+				PostID: snippet.PostID,
+				Title:  snippet.Title,
+				ContentMeta: &graphModel.ContentMeta{
+					Author:      snippet.Author,
+					PublishedAt: snippet.PublishedAt.String(),
+				},
+				ContentSnippet: snippet.ContentSnippet,
+			},
+		}
+		edges = append(edges, &edge)
+		endCursor = edge.Cursor
 	}
 
-	connection := &graphModel.PostSnippetConnection{
-		Edges: snippetEdges,
+	return &graphModel.PostSnippetConnection{
+		Edges: edges,
 		PageInfo: &graphModel.PageInfo{
 			EndCursor:   endCursor,
 			HasNextPage: hasNextPage,
 		},
 	}
+}
+
+func Post(storage storage.Storage, id int) (*graphModel.Post, error) {
+	dbPost, err := storage.GetPost(id)
+	if err != nil {
+		return nil, err
+	}
+
+	post := graphModel.Post{
+		ID:    dbPost.ID,
+		Title: dbPost.Title,
+		ContentMeta: &graphModel.ContentMeta{
+			Author:      dbPost.Author,
+			PublishedAt: dbPost.PublishedAt.String(),
+		},
+		Content:         dbPost.Content,
+		CommentsEnabled: dbPost.CommentsEnabled,
+	}
+	return &post, nil
+}
+
+func PostSnippets(storage storage.Storage, snippetLength *int, first *int, after *int) (*graphModel.PostSnippetConnection, error) {
+	limit := configs.PostSnippetsLimit
+	if first != nil {
+		limit = *first
+	}
+	length := configs.PostSnippetDefaultLength
+	if snippetLength != nil {
+		length = *snippetLength
+	}
+	snippets, err := storage.GetPostsSnippets(length, limit, after)
+	if err != nil {
+		return nil, err
+	}
+	connection := createPostSnippetConnection(snippets, limit)
 	return connection, nil
 }
 
 func CreatePost(storage storage.Storage, title string, author string, content string, commentsEnabled bool) (*graphModel.Post, error) {
-	postData := storageModel.Post{
+	dbPost := &storageModel.Post{
 		Title:           title,
 		Author:          author,
 		Content:         content,
 		CommentsEnabled: commentsEnabled,
 	}
-	post, err := storage.AddPost(postData)
+
+	dbPost, err := storage.AddPost(*dbPost)
 	if err != nil {
-		return nil, fmt.Errorf("create post error")
+		return nil, err
 	}
 
-	graphPost := graphModel.Post{
-		ID:    post.ID,
-		Title: post.Title,
+	post := graphModel.Post{
+		ID:    dbPost.ID,
+		Title: dbPost.Title,
 		ContentMeta: &graphModel.ContentMeta{
-			Author:      post.Author,
-			PublishedAt: post.PublishedAt.String(),
+			Author:      dbPost.Author,
+			PublishedAt: dbPost.PublishedAt.String(),
 		},
-		Content:         post.Content,
-		CommentsEnabled: post.CommentsEnabled,
+		Content:         dbPost.Content,
+		CommentsEnabled: dbPost.CommentsEnabled,
 	}
-	return &graphPost, nil
+	return &post, nil
 }

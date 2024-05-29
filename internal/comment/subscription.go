@@ -1,33 +1,33 @@
 package comment
 
 import (
-	"ozon-test-assignment/graph/model"
+	graphModel "ozon-test-assignment/graph/model"
 	"sync"
 )
 
 type SubscriptionManager struct {
 	mu          sync.Mutex
-	subscribers map[int]map[int]chan *model.Comment
+	subscribers map[int]map[int]chan *graphModel.Comment
 	lastId      int
 }
 
 func NewSubscriptionManager() *SubscriptionManager {
 	return &SubscriptionManager{
-		subscribers: make(map[int]map[int]chan *model.Comment),
+		subscribers: make(map[int]map[int]chan *graphModel.Comment),
 		lastId:      0,
 	}
 }
 
-func (sm *SubscriptionManager) AddSubscriber(postID int) (int, chan *model.Comment) {
+func (sm *SubscriptionManager) AddSubscriber(postID int) (int, chan *graphModel.Comment) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	if sm.subscribers[postID] == nil {
-		sm.subscribers[postID] = make(map[int]chan *model.Comment)
+		sm.subscribers[postID] = make(map[int]chan *graphModel.Comment)
 	}
 
 	sm.lastId++
 	id := sm.lastId
-	ch := make(chan *model.Comment, 1)
+	ch := make(chan *graphModel.Comment, 1)
 	sm.subscribers[postID][id] = ch
 	return id, ch
 }
@@ -44,7 +44,7 @@ func (sm *SubscriptionManager) RemoveSubscriber(postID int, id int) {
 	}
 }
 
-func (sm *SubscriptionManager) BroadcastComment(postID int, comment *model.Comment) {
+func (sm *SubscriptionManager) BroadcastComment(postID int, comment *graphModel.Comment) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	if subs, ok := sm.subscribers[postID]; ok {

@@ -1,28 +1,26 @@
 package memory
 
 import (
-	"fmt"
-	"ozon-test-assignment/internal/storage/model"
+	"ozon-test-assignment/internal/storage/errors"
+	storageModel "ozon-test-assignment/internal/storage/model"
 	"sync"
 )
 
 type Memory struct {
 	mu               sync.Mutex
-	posts            []*model.Post
-	comments         map[int]*model.Comment
-	topLevelComments map[int][]*model.Comment
-	lastCommentId    int
+	posts            []*storageModel.Post
+	comments         []*storageModel.Comment
+	topLevelComments map[int][]*storageModel.Comment
 }
 
 func NewMemory() *Memory {
-	posts := make([]*model.Post, 0)
-	comments := make(map[int]*model.Comment)
-	topLevelComments := make(map[int][]*model.Comment)
+	posts := make([]*storageModel.Post, 0)
+	comments := make([]*storageModel.Comment, 0)
+	topLevelComments := make(map[int][]*storageModel.Comment)
 	return &Memory{
 		posts:            posts,
 		comments:         comments,
 		topLevelComments: topLevelComments,
-		lastCommentId:    0,
 	}
 }
 
@@ -30,70 +28,78 @@ func (m *Memory) containsPost(postId int) bool {
 	return postId >= 0 && postId <= len(m.posts)
 }
 
-func (m *Memory) AddPost(post model.Post) (*model.Post, error) {
+func (m *Memory) containsComment(commentId int) bool {
+	return commentId >= 0 && commentId <= len(m.comments)
+}
+
+func (m *Memory) AddPost(post storageModel.Post) (*storageModel.Post, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	post.ID = len(m.posts) + 1
 	m.posts = append(m.posts, &post)
-	m.topLevelComments[post.ID] = make([]*model.Comment, 0)
+	m.topLevelComments[post.ID] = make([]*storageModel.Comment, 0)
 	return &post, nil
 }
 
-func (m *Memory) AddComment(comment model.Comment) (*model.Comment, error) {
+func (m *Memory) AddComment(comment storageModel.Comment) (*storageModel.Comment, error) {
 	if !m.containsPost(comment.PostID) {
-		return nil, fmt.Errorf("post not found")
+		return nil, errors.PostNotFoundError{}
+	}
+	post := m.posts[comment.PostID-1]
+	if !post.CommentsEnabled {
+		return nil, errors.CommentsDisabled{}
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.lastCommentId++
-	comment.ID = m.lastCommentId
-	comment.Replies = make([]*model.Comment, 0)
+	comment.ID = len(m.comments) + 1
+	comment.Replies = make([]*storageModel.Comment, 0)
+	if comment.ParentID != nil {
+		parentID := *comment.ParentID
+		comment.ParentID = &parentID
+	}
+	m.comments = append(m.comments, &comment)
 
-	m.comments[comment.ID] = &comment
 	if comment.ParentID == nil {
 		m.topLevelComments[comment.PostID] = append(m.topLevelComments[comment.PostID], &comment)
 	} else {
-		parentComment, exists := m.comments[*comment.ParentID]
-		if !exists {
-			return nil, fmt.Errorf("parent id does not exist")
+		if !m.containsComment(*comment.ParentID) {
+			return nil, errors.ParentCommentNotFound{}
 		}
+		parentComment := m.comments[*comment.ParentID-1]
 		parentComment.Replies = append(parentComment.Replies, &comment)
-		m.comments[*comment.ParentID] = parentComment
+		m.comments[*comment.ParentID-1] = parentComment
 	}
 
-	for k, v := range m.comments {
-		fmt.Println(k, v)
-	}
 	return &comment, nil
 }
 
-func (m *Memory) GetPost(postId int) (*model.Post, error) {
+func (m *Memory) GetPost(postId int) (*storageModel.Post, error) {
 	if !m.containsPost(postId) {
-		return nil, fmt.Errorf("post not found")
+		return nil, errors.PostNotFoundError{}
 	}
-	post := m.posts[postId]
+	post := m.posts[postId-1]
 	return post, nil
 }
 
-func (m *Memory) GetComments(postId int, parentId *int, depthLimit int, threadLimit int, after *int) ([]*model.Comment, error) {
+func (m *Memory) GetComments(postId int, parentId *int, depthLimit int, threadLimit int, after *int) ([]*storageModel.Comment, error) {
 	if !m.containsPost(postId) {
-		return nil, fmt.Errorf("post not found")
+		return nil, errors.PostNotFoundError{}
 	}
 
-	var parentComments []*model.Comment
+	var parentComments []*storageModel.Comment
 	if parentId == nil {
 		parentComments = m.topLevelComments[postId]
 	} else {
-		parent, exists := m.comments[*parentId]
-		if !exists {
-			fmt.Errorf("parent doesnt exist")
+		if !m.containsComment(*parentId) {
+			return nil, errors.ParentCommentNotFound{}
 		}
+		parent := m.comments[*parentId-1]
 		parentComments = parent.Replies
 	}
 
-	comments := []*model.Comment{}
+	comments := []*storageModel.Comment{}
 	for _, comment := range parentComments {
 		if after != nil && comment.ID <= *after {
 			continue
@@ -104,19 +110,22 @@ func (m *Memory) GetComments(postId int, parentId *int, depthLimit int, threadLi
 	return comments, nil
 }
 
-func (m *Memory) GetPostsSnippets(snippetLength int, limit int, after *int) ([]*model.PostSnippet, error) {
-	start := 0
+func (m *Memory) GetPostsSnippets(snippetLength int, limit int, after *int) ([]*storageModel.PostSnippet, error) {
+	start := 1
 	if after != nil {
-		start = *after
+		start = *after + 1
 	}
-	snippets := make([]*model.PostSnippet, 0, limit)
-	for id := start; id < len(m.posts); id++ {
-		post := m.posts[id]
-		contentSnippet := post.Content
-		if len(contentSnippet) >= limit {
-			contentSnippet = contentSnippet[:limit]
+	snippets := make([]*storageModel.PostSnippet, 0, limit)
+	for id := start; id <= len(m.posts); id++ {
+		if len(snippets) > limit {
+			break
 		}
-		snippet := model.PostSnippet{
+		post := m.posts[id-1]
+		contentSnippet := post.Content
+		if len(contentSnippet) >= snippetLength {
+			contentSnippet = contentSnippet[:snippetLength]
+		}
+		snippet := storageModel.PostSnippet{
 			PostID:         post.ID,
 			Title:          post.Title,
 			Author:         post.Author,

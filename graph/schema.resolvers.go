@@ -19,7 +19,9 @@ func (r *mutationResolver) CreatePost(ctx context.Context, title string, author 
 // CreateComment is the resolver for the createComment field.
 func (r *mutationResolver) CreateComment(ctx context.Context, postID int, parentID *int, author string, content string) (*model.Comment, error) {
 	comment, err := comment.CreateComment(r.storage, postID, parentID, author, content)
-	r.commentSubscriptionManager.BroadcastComment(postID, comment)
+	if err == nil {
+		r.commentSubscriptionManager.BroadcastComment(postID, comment)
+	}
 	return comment, err
 }
 
@@ -35,8 +37,7 @@ func (r *queryResolver) PostSnippets(ctx context.Context, snippetLength *int, fi
 
 // Comments is the resolver for the comments field.
 func (r *queryResolver) Comments(ctx context.Context, postID int, parentID *int, first *int, depth *int, after *int) (*model.CommentConnection, error) {
-	comments, err := comment.Comments(r.storage, postID, parentID, first, depth, after)
-	return comments, err
+	return comment.Comments(r.storage, postID, parentID, first, depth, after)
 }
 
 // CommentAdded is the resolver for the commentAdded field.

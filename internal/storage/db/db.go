@@ -1,8 +1,8 @@
 package db
 
 import (
-	"fmt"
 	dbModel "ozon-test-assignment/internal/storage/db/model"
+	"ozon-test-assignment/internal/storage/errors"
 	storageModel "ozon-test-assignment/internal/storage/model"
 
 	"gorm.io/driver/postgres"
@@ -13,29 +13,31 @@ type DB struct {
 	con *gorm.DB
 }
 
-func NewDB(user, password, host, port, dbname string) (*DB, error) {
-	dsn := fmt.Sprintf(
-		"user=%s password=%s host=%s port=%s dbname=%s sslmode=disable TimeZone=Europe/Moscow",
-		user, password, host, port, dbname,
-	)
-	var con *gorm.DB
-	var err error
-	for con == nil || err != nil {
-		con, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
-		if err != nil {
-			return nil, fmt.Errorf("datatbase connection failure")
-		}
+func NewDB(databaseUrl string) (*DB, error) {
+	con, err := gorm.Open(postgres.Open(databaseUrl), &gorm.Config{})
+	if err != nil {
+		return nil, errors.DatabaseConnectionFailure{}
 	}
 	con.AutoMigrate(&dbModel.Post{}, &dbModel.Comment{}, &dbModel.Reply{})
 	return &DB{con}, nil
 }
 
 func (db *DB) Close() {
-	sqlDB, err := db.con.DB()
-	if err != nil {
-
-	}
+	sqlDB, _ := db.con.DB()
 	sqlDB.Close()
+}
+
+func (db *DB) dbCommentToStorageComment(dbComment *dbModel.Comment) *storageModel.Comment {
+	comment := storageModel.Comment{
+		ID:          dbComment.ID,
+		PostID:      dbComment.PostID,
+		ParentID:    dbComment.ParentID,
+		Author:      dbComment.Author,
+		PublishedAt: dbComment.PublishedAt,
+		Content:     dbComment.Content,
+		Replies:     make([]*storageModel.Comment, 0),
+	}
+	return &comment
 }
 
 func (db *DB) AddPost(post storageModel.Post) (*storageModel.Post, error) {
@@ -47,9 +49,12 @@ func (db *DB) AddComment(comment storageModel.Comment) (*storageModel.Comment, e
 	post := struct {
 		CommentsEnabled bool
 	}{}
-	db.con.Table("posts").Where("id = ?", comment.PostID).First(&post)
+	tx := db.con.Table("posts").Where("id = ?", comment.PostID).First(&post)
+	if tx.Error != nil {
+		return nil, errors.DatabaseQueryExecutionFailure{}
+	}
 	if !post.CommentsEnabled {
-		return nil, fmt.Errorf("comments not allowed")
+		return nil, errors.CommentsDisabled{}
 	}
 
 	dbComment := dbModel.Comment{
@@ -59,31 +64,31 @@ func (db *DB) AddComment(comment storageModel.Comment) (*storageModel.Comment, e
 		Content:  comment.Content,
 	}
 
-	db.con.Create(&dbComment)
+	tx = db.con.Create(&dbComment)
+	if tx.Error != nil {
+		return nil, errors.DatabaseQueryExecutionFailure{}
+	}
 	if comment.ParentID != nil {
 		reply := dbModel.Reply{
 			PostID:    dbComment.PostID,
 			CommentID: *dbComment.ParentID,
 			ReplyID:   dbComment.ID,
 		}
-		db.con.Create(&reply)
+		tx = db.con.Create(&reply)
+		if tx.Error != nil {
+			return nil, errors.DatabaseQueryExecutionFailure{}
+		}
 	}
 
-	comment = storageModel.Comment{
-		ID:          dbComment.ID,
-		PostID:      dbComment.PostID,
-		ParentID:    dbComment.ParentID,
-		Author:      dbComment.Author,
-		PublishedAt: dbComment.PublishedAt,
-		Content:     dbComment.Content,
-		Replies:     make([]*storageModel.Comment, 0),
-	}
-	return &comment, nil
+	return db.dbCommentToStorageComment(&dbComment), nil
 }
 
 func (db *DB) GetPost(postId int) (*storageModel.Post, error) {
 	var dbPost dbModel.Post
-	db.con.First(&dbPost, postId)
+	tx := db.con.First(&dbPost, postId)
+	if tx.Error != nil {
+		return nil, errors.DatabaseQueryExecutionFailure{}
+	}
 
 	post := storageModel.Post{
 		ID:              dbPost.ID,
@@ -107,49 +112,37 @@ func (db *DB) GetComments(postId int, parentId *int, depthLimit int, threadLimit
 	}
 	tx = tx.Find(&dbTopLevelComments)
 	if tx.Error != nil {
-		return nil, tx.Error
+		return nil, errors.DatabaseQueryExecutionFailure{}
 	}
+
 	parentIds := make([]int, 0, len(dbTopLevelComments))
 	for _, dbComment := range dbTopLevelComments {
 		parentIds = append(parentIds, dbComment.ID)
-		comment := storageModel.Comment{
-			ID:          dbComment.ID,
-			PostID:      dbComment.PostID,
-			ParentID:    dbComment.ParentID,
-			Author:      dbComment.Author,
-			PublishedAt: dbComment.PublishedAt,
-			Content:     dbComment.Content,
-			Replies:     make([]*storageModel.Comment, 0),
-		}
-		topLevelComments = append(topLevelComments, &comment)
-		comments[comment.ID] = &comment
+		comment := db.dbCommentToStorageComment(&dbComment)
+		topLevelComments = append(topLevelComments, comment)
+		comments[comment.ID] = comment
 	}
 	for depth := 1; depth <= depthLimit; depth++ {
 		dbReplies := make([]dbModel.Comment, 0, threadLimit)
-		db.con.Raw(
+		tx = db.con.Raw(
 			"SELECT c.id, c.post_id, c.parent_id, c.author, c.published_at, c.content "+
 				"FROM replies AS r LEFT JOIN comments AS c ON r.reply_id = c.id "+
 				"WHERE r.comment_id IN ?", parentIds,
 		).Find(&dbReplies)
 		if tx.Error != nil {
+			return nil, errors.DatabaseQueryExecutionFailure{}
+		}
+		if tx.Error != nil {
 			return nil, tx.Error
 		}
 		parentIds = make([]int, 0, len(dbReplies))
 		for _, dbReply := range dbReplies {
-			reply := storageModel.Comment{
-				ID:          dbReply.ID,
-				PostID:      dbReply.PostID,
-				ParentID:    dbReply.ParentID,
-				Author:      dbReply.Author,
-				PublishedAt: dbReply.PublishedAt,
-				Content:     dbReply.Content,
-				Replies:     make([]*storageModel.Comment, 0),
-			}
+			reply := db.dbCommentToStorageComment(&dbReply)
 			parentIds = append(parentIds, reply.ID)
-			comments[reply.ID] = &reply
+			comments[reply.ID] = reply
 			if reply.ParentID != nil {
 				if parent, exists := comments[*reply.ParentID]; exists {
-					parent.Replies = append(parent.Replies, &reply)
+					parent.Replies = append(parent.Replies, reply)
 				}
 			}
 		}
@@ -160,7 +153,7 @@ func (db *DB) GetComments(postId int, parentId *int, depthLimit int, threadLimit
 func (db *DB) GetPostsSnippets(snippetLength int, limit int, after *int) ([]*storageModel.PostSnippet, error) {
 	snippets := make([]*storageModel.PostSnippet, 0, limit)
 	tx := db.con.Table("posts").Select(
-		"id, title, author, published_at, LEFT(content, ?), comments_enabled",
+		"id AS post_id, title, author, published_at, LEFT(content, ?) AS content_snippet, comments_enabled",
 		snippetLength,
 	)
 	if after != nil {
@@ -168,7 +161,7 @@ func (db *DB) GetPostsSnippets(snippetLength int, limit int, after *int) ([]*sto
 	}
 	tx = tx.Limit(limit).Find(&snippets)
 	if tx.Error != nil {
-		return nil, tx.Error
+		return nil, errors.DatabaseQueryExecutionFailure{}
 	}
 	return snippets, nil
 }

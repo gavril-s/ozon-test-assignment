@@ -2,39 +2,42 @@ package comment
 
 import (
 	"fmt"
-	"ozon-test-assignment/graph/model"
+	"ozon-test-assignment/configs"
 	graphModel "ozon-test-assignment/graph/model"
 	"ozon-test-assignment/internal/storage"
 	storageModel "ozon-test-assignment/internal/storage/model"
 )
 
-const CommentsDepthLimit = 5
-const CommentsThreadLimit = 100
-const ContentLengthLimit = 2000
-
-func createCommentConnection(comments []*storageModel.Comment, depthLimit int, threadLimit int) *graphModel.CommentConnection {
+func createCommentConnection(
+	comments []*storageModel.Comment,
+	depthLimit int,
+	threadLimit int,
+) *graphModel.CommentConnection {
 	edges := make([]*graphModel.CommentEdge, 0, threadLimit)
 	hasNextPage := false
 	endCursor := 0
+
 	for _, comment := range comments {
 		if len(edges) >= threadLimit {
 			hasNextPage = true
 			break
 		}
+
 		replies := &graphModel.CommentConnection{}
 		if depthLimit > 0 {
 			replies = createCommentConnection(comment.Replies, depthLimit-1, threadLimit)
 		}
 		if depthLimit == 1 {
 			replies = &graphModel.CommentConnection{
-				Edges: []*model.CommentEdge{},
+				Edges: []*graphModel.CommentEdge{},
 				PageInfo: &graphModel.PageInfo{
 					EndCursor:   0,
 					HasNextPage: replies.PageInfo.HasNextPage || len(replies.Edges) > 0,
 				},
 			}
 		}
-		edge := model.CommentEdge{
+
+		edge := graphModel.CommentEdge{
 			Cursor: comment.ID,
 			Node: &graphModel.Comment{
 				ID:     comment.ID,
@@ -50,6 +53,7 @@ func createCommentConnection(comments []*storageModel.Comment, depthLimit int, t
 		edges = append(edges, &edge)
 		endCursor = edge.Cursor
 	}
+
 	return &graphModel.CommentConnection{
 		Edges: edges,
 		PageInfo: &graphModel.PageInfo{
@@ -67,17 +71,17 @@ func Comments(
 	depth *int,
 	after *int,
 ) (*graphModel.CommentConnection, error) {
-	depthLimit := CommentsDepthLimit
+	depthLimit := configs.CommentsDepthLimit
 	if depth != nil {
 		depthLimit = *depth
 	}
-	threadLimit := CommentsThreadLimit
+	threadLimit := configs.CommentsThreadLimit
 	if first != nil {
 		threadLimit = *first
 	}
 	comments, err := storage.GetComments(postID, parentID, depthLimit, threadLimit, after)
 	if err != nil {
-		return nil, fmt.Errorf("get comment error")
+		return nil, err
 	}
 	connection := createCommentConnection(comments, depthLimit, threadLimit)
 	return connection, nil
@@ -90,29 +94,30 @@ func CreateComment(
 	author string,
 	content string,
 ) (*graphModel.Comment, error) {
-	if len(content) > ContentLengthLimit {
-		return nil, fmt.Errorf("limit comment")
+	if len(content) > configs.CommentsContentLengthLimit {
+		return nil, fmt.Errorf("Error")
 	}
 
-	commentData := storageModel.Comment{
+	dbComment := &storageModel.Comment{
 		PostID:   postID,
 		ParentID: parentID,
 		Author:   author,
 		Content:  content,
 	}
-	comment, err := storage.AddComment(commentData)
+
+	dbComment, err := storage.AddComment(*dbComment)
 	if err != nil {
 		return nil, err
 	}
 
-	graphComment := graphModel.Comment{
-		ID:     comment.ID,
-		PostID: comment.PostID,
+	comment := graphModel.Comment{
+		ID:     dbComment.ID,
+		PostID: dbComment.PostID,
 		ContentMeta: &graphModel.ContentMeta{
-			Author:      comment.Author,
-			PublishedAt: comment.PublishedAt.String(),
+			Author:      dbComment.Author,
+			PublishedAt: dbComment.PublishedAt.String(),
 		},
-		Content: comment.Content,
+		Content: dbComment.Content,
 		Replies: &graphModel.CommentConnection{
 			Edges: make([]*graphModel.CommentEdge, 0),
 			PageInfo: &graphModel.PageInfo{
@@ -121,5 +126,5 @@ func CreateComment(
 			},
 		},
 	}
-	return &graphComment, nil
+	return &comment, nil
 }

@@ -7,7 +7,9 @@ services:
       context: ..
       dockerfile: ./build/Dockerfile
     environment:
-      DATABASE_URL: "host=postgres user=user password=password dbname=db sslmode=disable"
+      STORAGE_TYPE: "DB"
+      PORT: "8080"
+      DATABASE_URL: "user=user password=password host=postgres port=5432 dbname=db sslmode=disable TimeZone=Europe/Moscow"
     ports:
       - "8080:8080"
     depends_on:
